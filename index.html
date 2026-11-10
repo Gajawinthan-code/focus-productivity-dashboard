@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f6ef" />
+    <title>Focus | Make room for what matters</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Focus home">
+          <span class="brand-mark" aria-hidden="true"><span></span></span>
+          <span>focus<span class="brand-period">.</span></span>
+        </a>
+        <div class="topbar-date">
+          <span class="date-dot" aria-hidden="true"></span>
+          <span>MONDAY, NOVEMBER 10</span>
+        </div>
+        <button class="avatar" type="button" aria-label="Your day">J</button>
+      </header>
+
+      <main>
+        <section class="welcome" aria-labelledby="welcome-title">
+          <p class="eyebrow">A LITTLE SPACE TO THINK</p>
+          <h1 id="welcome-title">Make room for<br /><em>what matters.</em></h1>
+          <p class="welcome-note">A calmer day starts with one clear thing.</p>
+        </section>
+
+        <section class="focus-panel" aria-labelledby="today-title">
+          <div class="focus-panel-label">
+            <span class="sun-mark" aria-hidden="true">✳</span>
+            <p class="eyebrow">YOUR NORTH STAR</p>
+          </div>
+          <h2 id="today-title">Today's focus</h2>
+          <p class="focus-prompt">What would make today feel meaningful?</p>
+          <label class="focus-entry" aria-label="Today's focus">
+            <input class="focus-input" id="focus-input" type="text" maxlength="100" value="Finish the first draft" />
+            <span class="edit-mark" aria-hidden="true">↗</span>
+          </label>
+          <div class="focus-panel-foot"><span>ONE THING AT A TIME</span><span class="foot-line"></span></div>
+        </section>
+
+        <div class="work-grid">
+          <section class="tasks-panel" aria-labelledby="tasks-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">THE DOABLE LIST</p>
+                <h2 id="tasks-title">Your tasks <span class="task-count">03</span></h2>
+              </div>
+              <button class="icon-button" type="button" aria-label="Add a task">+</button>
+            </div>
+            <ul class="task-list" aria-label="Tasks for today" aria-live="polite">
+              <li class="task-row is-done">
+                <button class="check-button" type="button" aria-label="Mark Review project notes as incomplete" aria-pressed="true"><span>✓</span></button>
+                <span class="task-name">Review project notes</span>
+                <span class="task-time">9:00</span>
+              </li>
+              <li class="task-row">
+                <button class="check-button" type="button" aria-label="Mark Finish the first draft complete" aria-pressed="false"><span></span></button>
+                <span class="task-name">Finish the first draft</span>
+                <span class="task-time">FOCUS</span>
+              </li>
+              <li class="task-row">
+                <button class="check-button" type="button" aria-label="Mark Take a proper lunch break complete" aria-pressed="false"><span></span></button>
+                <span class="task-name">Take a proper lunch break</span>
+                <button class="remove-button" type="button" aria-label="Remove Take a proper lunch break">×</button>
+              </li>
+            </ul>
+            <button class="add-task-button" type="button"><span aria-hidden="true">+</span> Add a task</button>
+          </section>
+
+          <aside class="side-column">
+            <section class="timer-panel" aria-labelledby="timer-title">
+              <div class="section-heading timer-heading">
+                <div>
+                  <p class="eyebrow">A MOMENT OF MOMENTUM</p>
+                  <h2 id="timer-title">Focus timer</h2>
+                </div>
+                <span class="timer-spark" aria-hidden="true">✳</span>
+              </div>
+              <div class="timer-face" aria-label="25 minutes remaining">
+                <span class="timer-value">25<span class="timer-colon">:</span>00</span>
+                <span class="timer-caption">MINUTES OF FOCUS</span>
+              </div>
+              <div class="timer-controls">
+                <button class="start-button" type="button"><span aria-hidden="true">▶</span> Start focus</button>
+                <button class="reset-button" type="button" aria-label="Reset timer">↺</button>
+              </div>
+            </section>
+
+            <section class="progress-panel" aria-labelledby="progress-title">
+              <div class="progress-topline">
+                <div>
+                  <p class="eyebrow">SMALL STEPS ADD UP</p>
+                  <h2 id="progress-title">Today's progress</h2>
+                </div>
+                <span class="progress-fraction"><span class="completed-count">1</span> <span class="total-count">/ 3</span></span>
+              </div>
+              <div class="progress-track" role="progressbar" aria-label="Daily task progress" aria-valuemin="0" aria-valuemax="3" aria-valuenow="1"><span></span></div>
+              <p class="progress-note">You're finding your rhythm.</p>
+            </section>
+          </aside>
+        </div>
+      </main>
+
+      <footer class="page-footer"><span>TAKE A BREATH</span><span class="footer-star" aria-hidden="true">✳</span><span>YOU'RE RIGHT WHERE YOU NEED TO BE</span></footer>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>
