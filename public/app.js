@@ -332,6 +332,7 @@ function animateProgressIndicator(targetPercent) {
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const shouldAnimate = !reducedMotion && state.progressPercent !== null && startPercent !== targetPercent;
   const animateCheck = !reducedMotion && targetPercent === 100 && !state.progressComplete;
+  const completesProgress = targetPercent === 100 && state.progressPercent !== null && previousPercent < 100 && !state.progressComplete;
   if (targetPercent < 100) {
     ring.classList.remove("complete");
     state.progressComplete = false;
@@ -357,6 +358,7 @@ function animateProgressIndicator(targetPercent) {
     if (targetPercent === 100) {
       ring.classList.add("complete");
       state.progressComplete = true;
+      if (completesProgress) playProgressCompleteChime();
     }
     return;
   }
@@ -378,6 +380,7 @@ function animateProgressIndicator(targetPercent) {
         ring.classList.add("complete");
         if (animateCheck) showCheck(true);
         state.progressComplete = true;
+        if (completesProgress) playProgressCompleteChime();
       }
     }
   };
@@ -416,6 +419,7 @@ function bindDashboard() {
     }
   });
   document.querySelectorAll("[data-task-check]").forEach((checkbox) => checkbox.addEventListener("change", async () => {
+    if (checkbox.checked) prepareAudioContext();
     try {
       await updateDoc(userDocument("tasks", checkbox.dataset.taskCheck), {
         completed: checkbox.checked,
@@ -512,6 +516,10 @@ function requestTimerNotificationPermission() {
 }
 
 function prepareTimerFeedback() {
+  prepareAudioContext();
+}
+
+function prepareAudioContext() {
   try {
     const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextConstructor) return;
@@ -523,6 +531,49 @@ function prepareTimerFeedback() {
     }
   } catch (error) {
     console.warn("Unable to enable the session chime.", error);
+  }
+}
+
+function playProgressCompleteChime() {
+  const context = state.audioContext;
+  if (!context) return;
+
+  const play = () => {
+    try {
+      const now = context.currentTime;
+      const tones = [
+        { frequency: 880, volume: 0.035, start: 0 },
+        { frequency: 1174.66, volume: 0.012, start: 0.025 }
+      ];
+      for (const tone of tones) {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const start = now + tone.start;
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(tone.frequency, start);
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(tone.volume, start + 0.018);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.28);
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start(start);
+        oscillator.stop(start + 0.3);
+      }
+    } catch (error) {
+      console.warn("Unable to play the progress completion sound.", error);
+    }
+  };
+
+  try {
+    if (context.state === "running") {
+      play();
+      return;
+    }
+    void context.resume().then(play).catch((error) => {
+      console.warn("Unable to play the progress completion sound.", error);
+    });
+  } catch (error) {
+    console.warn("Unable to play the progress completion sound.", error);
   }
 }
 
