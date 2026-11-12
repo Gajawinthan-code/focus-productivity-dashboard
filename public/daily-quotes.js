@@ -593,4 +593,5 @@ const quoteGroups = [[
   "Carry less; notice more; breathe gently."
 ]];
 
-export const dailyQuotes = quoteGroups.flatMap((group) => group.slice(0, 73));
+const quotesPerTheme = 73;
+export const dailyQuotes = quoteGroups.flatMap((group) => group.slice(0, quotesPerTheme));

@@ -22,7 +22,7 @@ import {
   where
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
-import { dailyQuotes } from "./quotes.js";
+import { dailyQuotes } from "./daily-quotes.js";
 
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
