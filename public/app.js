@@ -37,7 +37,13 @@ const state = {
   timerStarted: null,
   timerTotal: 25 * 60,
   timerRemaining: null,
-  toastTimer: null
+  timerCompleted: false,
+  timerCompletionHandled: false,
+  audioContext: null,
+  toastTimer: null,
+  progressPercent: null,
+  progressAnimationFrame: null,
+  progressComplete: false
 };
 const icons = {
   calendar: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>',
@@ -214,6 +220,12 @@ async function loadDashboard() {
 }
 
 async function onSignedIn(user) {
+  if (state.user?.uid !== user.uid) {
+    if (state.progressAnimationFrame !== null) cancelAnimationFrame(state.progressAnimationFrame);
+    state.progressPercent = null;
+    state.progressAnimationFrame = null;
+    state.progressComplete = false;
+  }
   state.user = user;
   app.innerHTML = '<div class="loading-screen"><span class="brand-mark">s</span><p>Making a little room…</p></div>';
   try {
@@ -233,7 +245,10 @@ function renderDataError(error) {
 function renderDashboard() {
   const tasks = state.tasks;
   const completed = tasks.filter((task) => task.completed).length;
-  const percent = tasks.length ? Math.round((completed / tasks.length) * 100) : 0;
+  const percent = tasks.length && completed === tasks.length
+    ? 100
+    : tasks.length ? (completed / tasks.length) * 100 : 0;
+  const percentLabel = percent === 100 ? 100 : Math.min(99, Math.round(percent));
   const focusMinutes = Math.floor(state.focusSeconds / 60);
   const name = state.user.displayName || state.user.email.split("@")[0];
   const taskMarkup = tasks.length ? tasks.map((task) => `
@@ -270,6 +285,7 @@ function renderDashboard() {
                 </select>
               </div>
             </div>
+            <p class="timer-completion" id="timer-completion" role="status" aria-live="polite" ${state.timerCompleted ? "" : "hidden"}>Your Stillpoint session is complete</p>
           </section>
           <section class="card tasks-card">
             <div class="card-heading"><div><h2>Today’s priorities</h2><p>A short list is a kind list.</p></div><span class="eyebrow compact-eyebrow">${completed}/${tasks.length} done</span></div>
@@ -280,7 +296,16 @@ function renderDashboard() {
         <div class="right-column">
           <section class="card progress-card">
             <div class="card-heading"><div><h2>Your progress</h2><p>A little progress adds up.</p></div></div>
-            <div class="progress-content"><div class="progress-ring" id="progress-ring"><strong>${percent}%</strong></div><div class="progress-copy"><strong>${tasks.length ? `${completed} of ${tasks.length} priorities` : "A fresh start"}</strong><span>${tasks.length && completed === tasks.length ? "You made space for what matters." : "Keep your attention on one thing at a time."}</span></div></div>
+            <div class="progress-content">
+              <div class="progress-ring" id="progress-ring" role="img" aria-label="${percentLabel}% complete">
+                <svg class="progress-ring-svg" viewBox="0 0 100 100" aria-hidden="true">
+                  <circle class="progress-track" cx="50" cy="50" r="43"></circle>
+                  <circle class="progress-fill" id="progress-fill" cx="50" cy="50" r="43"></circle>
+                </svg>
+                <svg class="progress-check" id="progress-check" viewBox="0 0 40 40" aria-hidden="true"><path d="m9 20 7 7 15-16"></path></svg>
+              </div>
+              <div class="progress-copy"><strong id="progress-percent-text">${percentLabel}% complete</strong><span>${tasks.length ? `${completed} of ${tasks.length} priorities${completed === tasks.length ? " · You made space for what matters." : " · Keep your attention on one thing at a time."}` : "A fresh start"}</span></div>
+            </div>
             <div class="mini-stats"><div class="mini-stat"><span>Focus today</span><strong>${focusMinutes}<small class="stat-unit"> min</small></strong></div><div class="mini-stat"><span>Sessions</span><strong>${state.focusSessions}</strong></div></div>
           </section>
           <aside class="card quote-card"><span class="quote-icon">${icons.leaf}</span><div><p>“Almost everything will work again if you unplug it for a few minutes, including you.”</p><span>Pause. Breathe. Begin again.</span></div></aside>
@@ -289,7 +314,74 @@ function renderDashboard() {
       <footer class="dashboard-footer">Your space, your pace. Your work stays yours.</footer>
     </div>`;
   bindDashboard();
+  animateProgressIndicator(percent);
   updateTimerDisplay();
+}
+
+function animateProgressIndicator(targetPercent) {
+  const ring = document.querySelector("#progress-ring");
+  const fill = document.querySelector("#progress-fill");
+  const percentText = document.querySelector("#progress-percent-text");
+  const check = document.querySelector("#progress-check path");
+  if (!ring || !fill || !percentText || !check) return;
+
+  if (state.progressAnimationFrame !== null) cancelAnimationFrame(state.progressAnimationFrame);
+  state.progressAnimationFrame = null;
+  const previousPercent = state.progressPercent ?? targetPercent;
+  const startPercent = targetPercent < 100 ? Math.min(previousPercent, 99) : previousPercent;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const shouldAnimate = !reducedMotion && state.progressPercent !== null && startPercent !== targetPercent;
+  const animateCheck = !reducedMotion && targetPercent === 100 && !state.progressComplete;
+  if (targetPercent < 100) {
+    ring.classList.remove("complete");
+    state.progressComplete = false;
+  }
+
+  const circumference = 2 * Math.PI * 43;
+  const setProgress = (percent) => {
+    state.progressPercent = percent;
+    const percentLabel = percent === 100 ? 100 : Math.min(99, Math.round(percent));
+    fill.style.strokeDasharray = String(circumference);
+    fill.style.strokeDashoffset = String(circumference * (1 - percent / 100));
+    percentText.textContent = `${percentLabel}% complete`;
+    ring.setAttribute("aria-label", `${percentLabel}% complete`);
+  };
+  const showCheck = (animated) => {
+    check.style.strokeDashoffset = animated ? "32" : "0";
+    if (animated) requestAnimationFrame(() => { check.style.strokeDashoffset = "0"; });
+  };
+
+  if (!shouldAnimate) {
+    setProgress(targetPercent);
+    check.style.strokeDashoffset = "0";
+    if (targetPercent === 100) {
+      ring.classList.add("complete");
+      state.progressComplete = true;
+    }
+    return;
+  }
+
+  setProgress(startPercent);
+  if (targetPercent < 100) check.style.strokeDashoffset = "32";
+  const startedAt = performance.now();
+  const duration = 850;
+  const animate = (now) => {
+    const progress = Math.min(1, (now - startedAt) / duration);
+    const eased = 1 - (1 - progress) ** 3;
+    setProgress(startPercent + (targetPercent - startPercent) * eased);
+    if (progress < 1) {
+      state.progressAnimationFrame = requestAnimationFrame(animate);
+    } else {
+      state.progressAnimationFrame = null;
+      setProgress(targetPercent);
+      if (targetPercent === 100) {
+        ring.classList.add("complete");
+        if (animateCheck) showCheck(true);
+        state.progressComplete = true;
+      }
+    }
+  };
+  state.progressAnimationFrame = requestAnimationFrame(animate);
 }
 
 function bindDashboard() {
@@ -374,8 +466,6 @@ function updateTimerDisplay(seconds = state.timer ? Math.max(0, Math.ceil((state
   const ring = document.querySelector("#timer-ring");
   const elapsed = state.timerTotal - seconds;
   ring.style.setProperty("--progress", `${Math.min(360, Math.max(0, elapsed / state.timerTotal * 360))}deg`);
-  const progressRing = document.querySelector("#progress-ring");
-  if (progressRing) progressRing.style.setProperty("--progress", `${state.tasks.length ? state.tasks.filter((task) => task.completed).length / state.tasks.length * 360 : 0}deg`);
 }
 
 function toggleTimer() {
@@ -392,7 +482,12 @@ function toggleTimer() {
   if (state.timerRemaining === null) {
     state.timerRemaining = state.timerTotal;
     state.timerStarted = new Date();
+    state.timerCompleted = false;
+    state.timerCompletionHandled = false;
+    document.querySelector("#timer-completion").hidden = true;
+    requestTimerNotificationPermission();
   }
+  prepareTimerFeedback();
   state.timerEnd = Date.now() + state.timerRemaining * 1000;
   document.querySelector("#timer-toggle").textContent = "Pause";
   document.querySelector("#timer-caption").textContent = "you’re doing great";
@@ -404,9 +499,88 @@ function toggleTimer() {
   }, 250);
 }
 
+function requestTimerNotificationPermission() {
+  try {
+    if ("Notification" in window && Notification.permission === "default") {
+      void Notification.requestPermission().catch((error) => {
+        console.warn("Unable to request notification permission.", error);
+      });
+    }
+  } catch (error) {
+    console.warn("Unable to request notification permission.", error);
+  }
+}
+
+function prepareTimerFeedback() {
+  try {
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextConstructor) return;
+    state.audioContext ??= new AudioContextConstructor();
+    if (state.audioContext.state === "suspended") {
+      void state.audioContext.resume().catch((error) => {
+        console.warn("Unable to enable the session chime.", error);
+      });
+    }
+  } catch (error) {
+    console.warn("Unable to enable the session chime.", error);
+  }
+}
+
+function playCompletionChime() {
+  const context = state.audioContext;
+  if (!context) return;
+
+  const play = () => {
+    try {
+      const now = context.currentTime;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(660, now);
+      oscillator.frequency.setValueAtTime(880, now + 0.16);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.12, now + 0.035);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(now);
+      oscillator.stop(now + 0.4);
+    } catch (error) {
+      console.warn("Unable to play the session chime.", error);
+    }
+  };
+
+  try {
+    if (context.state === "running") {
+      play();
+      return;
+    }
+    void context.resume().then(play).catch((error) => {
+      console.warn("Unable to play the session chime.", error);
+    });
+  } catch (error) {
+    console.warn("Unable to play the session chime.", error);
+  }
+}
+
+function showCompletionNotification() {
+  try {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    new Notification("Stillpoint", { body: "Your Stillpoint session is complete" });
+  } catch (error) {
+    console.warn("Unable to show the session notification.", error);
+  }
+}
+
 async function finishTimer() {
+  if (state.timerCompletionHandled) return;
+  state.timerCompletionHandled = true;
   clearInterval(state.timer);
   state.timer = null;
+  state.timerCompleted = true;
+  document.querySelector("#timer-completion").hidden = false;
+  playCompletionChime();
+  showCompletionNotification();
   const durationSeconds = state.timerTotal;
   const startedAt = state.timerStarted || new Date(Date.now() - durationSeconds * 1000);
   state.timerStarted = null;
@@ -444,6 +618,10 @@ function resetTimer() {
   }
   state.timerRemaining = null;
   state.timerStarted = null;
+  state.timerCompleted = false;
+  state.timerCompletionHandled = false;
+  const completionMessage = document.querySelector("#timer-completion");
+  if (completionMessage) completionMessage.hidden = true;
   const button = document.querySelector("#timer-toggle");
   const caption = document.querySelector("#timer-caption");
   if (button) button.textContent = "Start focus";
@@ -457,6 +635,8 @@ function resetTimerState() {
   state.timerRemaining = null;
   state.timerStarted = null;
   state.timerTotal = 25 * 60;
+  state.timerCompleted = false;
+  state.timerCompletionHandled = false;
 }
 
 function configIsReady(config) {
