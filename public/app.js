@@ -22,6 +22,7 @@ import {
   where
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
+import { dailyQuotes } from "./quotes.js";
 
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
@@ -43,7 +44,9 @@ const state = {
   toastTimer: null,
   progressPercent: null,
   progressAnimationFrame: null,
-  progressComplete: false
+  progressComplete: false,
+  dailyQuoteTimer: null,
+  dailyQuoteListenersBound: false
 };
 const icons = {
   calendar: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>',
@@ -56,6 +59,11 @@ const today = () => {
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 const initials = (name) => name.split(/\s+/).slice(0, 2).map((part) => part[0] || "").join("").toUpperCase();
 const humanDate = () => new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(new Date());
+const localDateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+const dailyQuoteIndex = (date) => {
+  const dayNumber = Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000);
+  return ((dayNumber % dailyQuotes.length) + dailyQuotes.length) % dailyQuotes.length;
+};
 const greeting = () => {
   const hour = new Date().getHours();
   return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -68,6 +76,29 @@ function showToast(message) {
   toast.classList.add("visible");
   clearTimeout(state.toastTimer);
   state.toastTimer = setTimeout(() => toast.classList.remove("visible"), 3000);
+}
+
+function updateDailyQuote() {
+  const quote = document.querySelector("#daily-quote");
+  if (!quote || dailyQuotes.length !== 365) return;
+
+  const now = new Date();
+  const dateKey = localDateKey(now);
+  if (quote.dataset.localDate !== dateKey) {
+    quote.textContent = `“${dailyQuotes[dailyQuoteIndex(now)]}”`;
+    quote.dataset.localDate = dateKey;
+  }
+  clearTimeout(state.dailyQuoteTimer);
+  const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  state.dailyQuoteTimer = setTimeout(updateDailyQuote, Math.max(1, nextMidnight.getTime() - Date.now() + 25));
+
+  if (!state.dailyQuoteListenersBound) {
+    window.addEventListener("focus", updateDailyQuote);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) updateDailyQuote();
+    });
+    state.dailyQuoteListenersBound = true;
+  }
 }
 
 function authShell({ title, subtitle, content, formId, buttonText, switchText, switchAction, mobileBrand = true }) {
@@ -308,13 +339,14 @@ function renderDashboard() {
             </div>
             <div class="mini-stats"><div class="mini-stat"><span>Focus today</span><strong>${focusMinutes}<small class="stat-unit"> min</small></strong></div><div class="mini-stat"><span>Sessions</span><strong>${state.focusSessions}</strong></div></div>
           </section>
-          <aside class="card quote-card"><span class="quote-icon">${icons.leaf}</span><div><p>“Almost everything will work again if you unplug it for a few minutes, including you.”</p><span>Pause. Breathe. Begin again.</span></div></aside>
+          <aside class="card quote-card"><span class="quote-icon">${icons.leaf}</span><div><p id="daily-quote"></p><span>Pause. Breathe. Begin again.</span></div></aside>
         </div>
       </div>
       <footer class="dashboard-footer">Your space, your pace. Your work stays yours.</footer>
     </div>`;
   bindDashboard();
   animateProgressIndicator(percent);
+  updateDailyQuote();
   updateTimerDisplay();
 }
 
