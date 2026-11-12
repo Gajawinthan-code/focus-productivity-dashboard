@@ -591,6 +591,6 @@ const quoteGroups = [[
   "Let the next kind thing be for you.",
   "You can rest here, just as you are.",
   "Carry less; notice more; breathe gently."
-];
+]];
 
 export const dailyQuotes = quoteGroups.flatMap((group) => group.slice(0, 73));
