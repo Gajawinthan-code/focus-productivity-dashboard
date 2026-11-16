@@ -17,6 +17,7 @@ import {
   getFirestore,
   query,
   serverTimestamp,
+  setDoc,
   Timestamp,
   updateDoc,
   where
@@ -47,6 +48,7 @@ const state = {
   db: null,
   user: null,
   tasks: [],
+  dailyTasks: [],
   focusSeconds: 0,
   focusSessions: 0,
   timer: null,
@@ -59,6 +61,7 @@ const state = {
   timerCompletionHandled: false,
   audioContext: null,
   toastTimer: null,
+  dashboardDate: null,
   progressPercent: null,
   progressAnimationFrame: null,
   progressComplete: false,
@@ -164,6 +167,9 @@ function updateDailyQuote() {
   if (quote.dataset.localDate !== dateKey) {
     quote.textContent = `“${dailyQuotes[dailyQuoteIndex(now)]}”`;
     quote.dataset.localDate = dateKey;
+    if (state.user && state.dashboardDate !== null && state.dashboardDate !== dateKey) {
+      void loadDashboard().catch(renderDataError);
+    }
   }
   clearTimeout(state.dailyQuoteTimer);
   const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
@@ -316,16 +322,36 @@ function renderSetupNeeded() {
 }
 
 async function loadDashboard() {
-  const taskSnapshot = await getDocs(query(userCollection("tasks"), where("dueDate", "==", today())));
+  const focusDate = today();
+  const [taskSnapshot, dailyTaskSnapshot, dailyCompletionSnapshot, focusSnapshot] = await Promise.all([
+    getDocs(query(userCollection("tasks"), where("dueDate", "==", focusDate))),
+    getDocs(userCollection("dailyTasks")),
+    getDocs(query(userCollection("dailyTaskCompletions"), where("completionDate", "==", focusDate))),
+    getDocs(query(userCollection("focusSessions"), where("focusDate", "==", focusDate)))
+  ]);
   state.tasks = taskSnapshot.docs.map((taskDoc) => ({ id: taskDoc.id, ...taskDoc.data() }));
   state.tasks.sort((a, b) => {
     const aTime = a.createdAt?.toMillis?.() || 0;
     const bTime = b.createdAt?.toMillis?.() || 0;
     return aTime - bTime;
   });
-  const focusSnapshot = await getDocs(query(userCollection("focusSessions"), where("focusDate", "==", today())));
+  const completedDailyTaskIds = new Set(dailyCompletionSnapshot.docs
+    .map((completionDoc) => completionDoc.data())
+    .filter((completion) => completion.completed)
+    .map((completion) => completion.taskId));
+  state.dailyTasks = dailyTaskSnapshot.docs.map((taskDoc) => ({
+    id: taskDoc.id,
+    ...taskDoc.data(),
+    completed: completedDailyTaskIds.has(taskDoc.id)
+  }));
+  state.dailyTasks.sort((a, b) => {
+    const aTime = a.createdAt?.toMillis?.() || 0;
+    const bTime = b.createdAt?.toMillis?.() || 0;
+    return aTime - bTime;
+  });
   state.focusSessions = focusSnapshot.size;
   state.focusSeconds = focusSnapshot.docs.reduce((seconds, session) => seconds + session.data().durationSeconds, 0);
+  state.dashboardDate = focusDate;
   renderDashboard();
 }
 
@@ -354,10 +380,14 @@ function renderDataError(error) {
 
 function renderDashboard() {
   const tasks = state.tasks;
-  const completed = tasks.filter((task) => task.completed).length;
-  const percent = tasks.length && completed === tasks.length
+  const dailyTasks = state.dailyTasks;
+  const completedPriorities = tasks.filter((task) => task.completed).length;
+  const completedDailyTasks = dailyTasks.filter((task) => task.completed).length;
+  const totalCompleted = completedPriorities + completedDailyTasks;
+  const totalTasks = tasks.length + dailyTasks.length;
+  const percent = totalTasks && totalCompleted === totalTasks
     ? 100
-    : tasks.length ? (completed / tasks.length) * 100 : 0;
+    : totalTasks ? (totalCompleted / totalTasks) * 100 : 0;
   const percentLabel = percent === 100 ? 100 : Math.min(99, Math.round(percent));
   const focusMinutes = Math.floor(state.focusSeconds / 60);
   const name = state.user.displayName || state.user.email.split("@")[0];
@@ -367,6 +397,15 @@ function renderDashboard() {
       <span class="task-title">${escapeHtml(task.title)}</span>
       <button class="icon-btn delete-task" aria-label="Delete task" data-task-delete="${escapeHtml(task.id)}">×</button>
     </div>`).join("") : '<div class="empty-tasks">Your list is clear. Add one small thing to begin.</div>';
+  const dailyTaskMarkup = dailyTasks.length ? dailyTasks.map((task) => `
+    <div class="task-row ${task.completed ? "done" : ""}">
+      <input class="task-check" type="checkbox" aria-label="Mark ${escapeHtml(task.title)} complete for today" data-daily-task-check="${escapeHtml(task.id)}" ${task.completed ? "checked" : ""}>
+      <span class="task-title">${escapeHtml(task.title)}</span>
+      <button class="icon-btn delete-task" aria-label="Delete daily task ${escapeHtml(task.title)}" data-daily-task-delete="${escapeHtml(task.id)}">×</button>
+    </div>`).join("") : '<div class="empty-tasks">Add a routine to return to each day.</div>';
+  const progressSummary = totalTasks
+    ? `${totalCompleted} of ${totalTasks} today · ${completedPriorities}/${tasks.length} priorities · ${completedDailyTasks}/${dailyTasks.length} daily tasks${totalCompleted === totalTasks ? " · You made space for what matters." : " · Keep your attention on one thing at a time."}`
+    : "A fresh start";
   app.innerHTML = `
     <div class="dashboard">
       <header class="topbar">
@@ -407,9 +446,14 @@ function renderDashboard() {
             <p class="timer-completion" id="timer-completion" role="status" aria-live="polite" ${state.timerCompleted ? "" : "hidden"}>Your Stillpoint session is complete</p>
           </section>
           <section class="card tasks-card">
-            <div class="card-heading"><div><h2>Today’s priorities</h2><p>A short list is a kind list.</p></div><span class="eyebrow compact-eyebrow">${completed}/${tasks.length} done</span></div>
+            <div class="card-heading"><div><h2>Today’s priorities</h2><p>A short list is a kind list.</p></div><span class="eyebrow compact-eyebrow">${completedPriorities}/${tasks.length} done</span></div>
             <form class="task-form" id="task-form"><input class="task-input" name="title" maxlength="160" placeholder="Add a task to today…" aria-label="New task" required><button class="primary-btn" type="submit">Add task</button></form>
             <div class="task-list">${taskMarkup}</div>
+          </section>
+          <section class="card tasks-card daily-tasks-card">
+            <div class="card-heading"><div><h2>Daily Tasks</h2><p>Small things to return to each day.</p></div><span class="eyebrow compact-eyebrow">${completedDailyTasks}/${dailyTasks.length} done</span></div>
+            <form class="task-form" id="daily-task-form"><input class="task-input" name="title" maxlength="160" placeholder="Add a daily task…" aria-label="New daily task" required><button class="primary-btn" type="submit">Add daily task</button></form>
+            <div class="task-list" aria-live="polite">${dailyTaskMarkup}</div>
           </section>
         </div>
         <div class="right-column">
@@ -423,7 +467,7 @@ function renderDashboard() {
                 </svg>
                 <svg class="progress-check" id="progress-check" viewBox="0 0 40 40" aria-hidden="true"><path d="m9 20 7 7 15-16"></path></svg>
               </div>
-              <div class="progress-copy"><strong id="progress-percent-text">${percentLabel}% complete</strong><span>${tasks.length ? `${completed} of ${tasks.length} priorities${completed === tasks.length ? " · You made space for what matters." : " · Keep your attention on one thing at a time."}` : "A fresh start"}</span></div>
+              <div class="progress-copy"><strong id="progress-percent-text">${percentLabel}% complete</strong><span>${progressSummary}</span></div>
             </div>
             <div class="mini-stats"><div class="mini-stat"><span>Focus today</span><strong>${focusMinutes}<small class="stat-unit"> min</small></strong></div><div class="mini-stat"><span>Sessions</span><strong>${state.focusSessions}</strong></div></div>
           </section>
@@ -539,6 +583,25 @@ function bindDashboard() {
       button.disabled = false;
     }
   });
+  document.querySelector("#daily-task-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = event.currentTarget.elements.title;
+    const title = input.value.trim();
+    if (!title || title.length > 160) return;
+    const button = event.currentTarget.querySelector("button");
+    button.disabled = true;
+    try {
+      await addDoc(userCollection("dailyTasks"), {
+        title,
+        createdAt: serverTimestamp()
+      });
+      await loadDashboard();
+      showToast("Added to Daily Tasks.");
+    } catch (error) {
+      showToast(friendlyDataError(error));
+      button.disabled = false;
+    }
+  });
   document.querySelectorAll("[data-task-check]").forEach((checkbox) => checkbox.addEventListener("change", async () => {
     if (checkbox.checked) prepareAudioContext();
     try {
@@ -552,9 +615,42 @@ function bindDashboard() {
       checkbox.checked = !checkbox.checked;
     }
   }));
+  document.querySelectorAll("[data-daily-task-check]").forEach((checkbox) => checkbox.addEventListener("change", async () => {
+    if (checkbox.checked) prepareAudioContext();
+    const taskId = checkbox.dataset.dailyTaskCheck;
+    const completionDate = today();
+    const completionId = `${taskId}_${completionDate}`;
+    try {
+      if (checkbox.checked) {
+        await setDoc(userDocument("dailyTaskCompletions", completionId), {
+          taskId,
+          completionDate,
+          completed: true,
+          completedAt: serverTimestamp()
+        });
+      } else {
+        await deleteDoc(userDocument("dailyTaskCompletions", completionId));
+      }
+      await loadDashboard();
+    } catch (error) {
+      showToast(friendlyDataError(error));
+      checkbox.checked = !checkbox.checked;
+    }
+  }));
   document.querySelectorAll("[data-task-delete]").forEach((button) => button.addEventListener("click", async () => {
     try {
       await deleteDoc(userDocument("tasks", button.dataset.taskDelete));
+      await loadDashboard();
+    } catch (error) {
+      showToast(friendlyDataError(error));
+    }
+  }));
+  document.querySelectorAll("[data-daily-task-delete]").forEach((button) => button.addEventListener("click", async () => {
+    const taskId = button.dataset.dailyTaskDelete;
+    try {
+      const completionSnapshot = await getDocs(query(userCollection("dailyTaskCompletions"), where("taskId", "==", taskId)));
+      await Promise.all(completionSnapshot.docs.map((completionDoc) => deleteDoc(completionDoc.ref)));
+      await deleteDoc(userDocument("dailyTasks", taskId));
       await loadDashboard();
     } catch (error) {
       showToast(friendlyDataError(error));
@@ -943,6 +1039,8 @@ if (!configIsReady(firebaseConfig)) {
     if (!user) {
       state.user = null;
       state.tasks = [];
+      state.dailyTasks = [];
+      state.dashboardDate = null;
       state.focusSeconds = 0;
       state.focusSessions = 0;
       resetTimerState();
