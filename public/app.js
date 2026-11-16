@@ -323,27 +323,24 @@ function renderSetupNeeded() {
 
 async function loadDashboard() {
   const focusDate = today();
-  const [taskSnapshot, dailyTaskSnapshot, dailyCompletionSnapshot, focusSnapshot] = await Promise.all([
-    getDocs(query(userCollection("tasks"), where("dueDate", "==", focusDate))),
-    getDocs(userCollection("dailyTasks")),
-    getDocs(query(userCollection("dailyTaskCompletions"), where("completionDate", "==", focusDate))),
+  const [taskSnapshot, focusSnapshot] = await Promise.all([
+    getDocs(userCollection("tasks")),
     getDocs(query(userCollection("focusSessions"), where("focusDate", "==", focusDate)))
   ]);
-  state.tasks = taskSnapshot.docs.map((taskDoc) => ({ id: taskDoc.id, ...taskDoc.data() }));
+  const tasks = taskSnapshot.docs.map((taskDoc) => ({ id: taskDoc.id, ...taskDoc.data() }));
+  state.tasks = tasks.filter((task) => !task.id.startsWith("daily_") && task.dueDate === focusDate);
   state.tasks.sort((a, b) => {
     const aTime = a.createdAt?.toMillis?.() || 0;
     const bTime = b.createdAt?.toMillis?.() || 0;
     return aTime - bTime;
   });
-  const completedDailyTaskIds = new Set(dailyCompletionSnapshot.docs
-    .map((completionDoc) => completionDoc.data())
-    .filter((completion) => completion.completed)
-    .map((completion) => completion.taskId));
-  state.dailyTasks = dailyTaskSnapshot.docs.map((taskDoc) => ({
-    id: taskDoc.id,
-    ...taskDoc.data(),
-    completed: completedDailyTaskIds.has(taskDoc.id)
-  }));
+  state.dailyTasks = tasks.filter((task) => task.id.startsWith("daily_")).map((task) => {
+    const completedAt = task.completedAt?.toDate?.();
+    return {
+      ...task,
+      completed: Boolean(task.completed && completedAt && localDateKey(completedAt) === focusDate)
+    };
+  });
   state.dailyTasks.sort((a, b) => {
     const aTime = a.createdAt?.toMillis?.() || 0;
     const bTime = b.createdAt?.toMillis?.() || 0;
@@ -591,9 +588,13 @@ function bindDashboard() {
     const button = event.currentTarget.querySelector("button");
     button.disabled = true;
     try {
-      await addDoc(userCollection("dailyTasks"), {
+      const taskId = `daily_${crypto.randomUUID()}`;
+      await setDoc(userDocument("tasks", taskId), {
         title,
-        createdAt: serverTimestamp()
+        dueDate: today(),
+        completed: false,
+        createdAt: serverTimestamp(),
+        completedAt: null
       });
       await loadDashboard();
       showToast("Added to Daily Tasks.");
@@ -618,19 +619,11 @@ function bindDashboard() {
   document.querySelectorAll("[data-daily-task-check]").forEach((checkbox) => checkbox.addEventListener("change", async () => {
     if (checkbox.checked) prepareAudioContext();
     const taskId = checkbox.dataset.dailyTaskCheck;
-    const completionDate = today();
-    const completionId = `${taskId}_${completionDate}`;
     try {
-      if (checkbox.checked) {
-        await setDoc(userDocument("dailyTaskCompletions", completionId), {
-          taskId,
-          completionDate,
-          completed: true,
-          completedAt: serverTimestamp()
-        });
-      } else {
-        await deleteDoc(userDocument("dailyTaskCompletions", completionId));
-      }
+      await updateDoc(userDocument("tasks", taskId), {
+        completed: checkbox.checked,
+        completedAt: checkbox.checked ? serverTimestamp() : null
+      });
       await loadDashboard();
     } catch (error) {
       showToast(friendlyDataError(error));
@@ -646,11 +639,8 @@ function bindDashboard() {
     }
   }));
   document.querySelectorAll("[data-daily-task-delete]").forEach((button) => button.addEventListener("click", async () => {
-    const taskId = button.dataset.dailyTaskDelete;
     try {
-      const completionSnapshot = await getDocs(query(userCollection("dailyTaskCompletions"), where("taskId", "==", taskId)));
-      await Promise.all(completionSnapshot.docs.map((completionDoc) => deleteDoc(completionDoc.ref)));
-      await deleteDoc(userDocument("dailyTasks", taskId));
+      await deleteDoc(userDocument("tasks", button.dataset.dailyTaskDelete));
       await loadDashboard();
     } catch (error) {
       showToast(friendlyDataError(error));
