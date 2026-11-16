@@ -26,6 +26,22 @@ import { dailyQuotes } from "./daily-quotes.js";
 
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
+const maxDurationMinutes = 23 * 60 + 59;
+const timerPreferenceKey = "stillpoint-duration-minutes";
+
+function readTimerPreference() {
+  try {
+    const savedPreference = Number(localStorage.getItem(timerPreferenceKey));
+    return Number.isInteger(savedPreference) && savedPreference > 0 && savedPreference <= maxDurationMinutes
+      ? savedPreference
+      : 25;
+  } catch (error) {
+    console.warn("Unable to read the saved timer duration.", error);
+    return 25;
+  }
+}
+
+const initialTimerPreference = readTimerPreference();
 const state = {
   auth: null,
   db: null,
@@ -36,7 +52,8 @@ const state = {
   timer: null,
   timerEnd: 0,
   timerStarted: null,
-  timerTotal: 25 * 60,
+  timerTotal: initialTimerPreference * 60,
+  timerPreference: initialTimerPreference,
   timerRemaining: null,
   timerCompleted: false,
   timerCompletionHandled: false,
@@ -75,6 +92,12 @@ const userDocument = (collectionName, id) => doc(state.db, "members", state.user
 function themeToggleMarkup() {
   const nextTheme = state.theme === "dark" ? "light" : "dark";
   return `<button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to ${nextTheme} mode">${themeToggleContents(nextTheme)}</button>`;
+}
+
+function durationWheelMarkup(id, label, unit, count) {
+  const options = Array.from({ length: count }, (_, value) => `
+    <div class="duration-option" id="${id}-option-${value}" role="option" aria-label="${value} ${unit}" aria-selected="false" data-value="${value}">${value}</div>`).join("");
+  return `<div class="duration-picker" id="${id}" role="listbox" aria-labelledby="${label}" aria-orientation="vertical" tabindex="0"><div class="duration-picker-track">${options}</div></div>`;
 }
 
 function themeToggleContents(nextTheme) {
@@ -365,12 +388,20 @@ function renderDashboard() {
             <div class="timer-body">
               <div class="timer-ring" id="timer-ring"><div class="timer-display"><strong id="timer-display">25:00</strong><span id="timer-caption">ready when you are</span></div></div>
               <div class="timer-controls">
-                <button class="primary-btn" id="timer-toggle">Start focus</button>
-                <button class="text-btn" id="timer-reset">Reset timer</button>
-                <label class="timer-note" for="duration">Session length</label>
-                <select class="duration-select" id="duration" aria-label="Focus session length">
-                  <option value="25">25 minutes</option><option value="50">50 minutes</option><option value="90">90 minutes</option>
-                </select>
+                <div class="timer-actions">
+                  <button class="primary-btn" id="timer-toggle">Start focus</button>
+                  <button class="text-btn" id="timer-reset">Reset timer</button>
+                </div>
+                <div class="duration-pickers" role="group" aria-label="Next session duration">
+                  <div class="duration-column">
+                    <span class="timer-note" id="duration-hours-label">Hours</span>
+                    ${durationWheelMarkup("duration-hours", "duration-hours-label", "hours", 24)}
+                  </div>
+                  <div class="duration-column">
+                    <span class="timer-note" id="duration-minutes-label">Minutes</span>
+                    ${durationWheelMarkup("duration-minutes", "duration-minutes-label", "minutes", 60)}
+                  </div>
+                </div>
               </div>
             </div>
             <p class="timer-completion" id="timer-completion" role="status" aria-live="polite" ${state.timerCompleted ? "" : "hidden"}>Your Stillpoint session is complete</p>
@@ -529,20 +560,139 @@ function bindDashboard() {
       showToast(friendlyDataError(error));
     }
   }));
-  const duration = document.querySelector("#duration");
-  duration.value = String(state.timerTotal / 60);
-  duration.disabled = Boolean(state.timer);
+  bindDurationPickers(
+    document.querySelector("#duration-hours"),
+    document.querySelector("#duration-minutes"),
+    state.timerPreference
+  );
   document.querySelector("#timer-toggle").textContent = state.timer ? "Pause" : state.timerRemaining !== null ? "Resume focus" : "Start focus";
   if (state.timer) document.querySelector("#timer-caption").textContent = "you’re doing great";
   else if (state.timerRemaining !== null) document.querySelector("#timer-caption").textContent = "paused";
-  duration.addEventListener("change", () => {
-    if (state.timer) return;
-    state.timerTotal = Number(duration.value) * 60;
-    state.timerRemaining = null;
-    updateTimerDisplay(state.timerTotal);
-  });
   document.querySelector("#timer-toggle").addEventListener("click", toggleTimer);
   document.querySelector("#timer-reset").addEventListener("click", resetTimer);
+}
+
+function bindDurationPickers(hoursPicker, minutesPicker, durationMinutes) {
+  const wheels = {
+    hours: makeDurationWheel("hours", hoursPicker, 24, Math.floor(durationMinutes / 60)),
+    minutes: makeDurationWheel("minutes", minutesPicker, 60, durationMinutes % 60)
+  };
+  Object.values(wheels).forEach((wheel) => {
+    setWheelSelection(wheel, wheel.selectedIndex, false);
+    bindDurationWheel(wheel, wheels);
+  });
+}
+
+function makeDurationWheel(name, picker, count, selectedIndex) {
+  return {
+    name,
+    picker,
+    options: [...picker.querySelectorAll(".duration-option")],
+    rowHeight: picker.querySelector(".duration-option").getBoundingClientRect().height,
+    selectedIndex,
+    count,
+    scrollTimer: null,
+    drag: null
+  };
+}
+
+function setWheelSelection(wheel, index, scroll = true) {
+  wheel.selectedIndex = Math.max(0, Math.min(wheel.count - 1, index));
+  const selectedOption = wheel.options[wheel.selectedIndex];
+  wheel.picker.setAttribute("aria-activedescendant", selectedOption.id);
+  wheel.options.forEach((option, optionIndex) => {
+    const selected = optionIndex === wheel.selectedIndex;
+    option.setAttribute("aria-selected", String(selected));
+    option.classList.toggle("is-selected", selected);
+  });
+  if (scroll) {
+    wheel.picker.scrollTo({
+      top: wheel.selectedIndex * wheel.rowHeight,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth"
+    });
+  }
+}
+
+function updateTimerPreference(hours, minutes) {
+  const durationMinutes = hours * 60 + minutes;
+  state.timerPreference = durationMinutes;
+  try {
+    localStorage.setItem(timerPreferenceKey, String(durationMinutes));
+  } catch (error) {
+    console.warn("Unable to save the timer duration preference.", error);
+  }
+
+  if (!state.timer && state.timerRemaining === null) {
+    state.timerTotal = durationMinutes * 60;
+    updateTimerDisplay(state.timerTotal);
+  }
+}
+
+function selectDurationWheel(wheel, index, wheels, scroll = true) {
+  let nextIndex = Math.max(0, Math.min(wheel.count - 1, index));
+  let hours = wheel.name === "hours" ? nextIndex : wheels.hours.selectedIndex;
+  let minutes = wheel.name === "minutes" ? nextIndex : wheels.minutes.selectedIndex;
+  if (hours === 0 && minutes === 0) {
+    if (wheel.name === "hours") minutes = 1;
+    else nextIndex = minutes = 1;
+  }
+
+  const changed = hours !== wheels.hours.selectedIndex || minutes !== wheels.minutes.selectedIndex;
+  setWheelSelection(wheels.hours, hours, wheel.name === "hours" ? scroll : hours !== wheels.hours.selectedIndex);
+  setWheelSelection(wheels.minutes, minutes, wheel.name === "minutes" ? scroll : minutes !== wheels.minutes.selectedIndex);
+  if (changed) updateTimerPreference(hours, minutes);
+}
+
+function bindDurationWheel(wheel, wheels) {
+  const { picker, rowHeight } = wheel;
+  picker.scrollTop = wheel.selectedIndex * rowHeight;
+  picker.addEventListener("scroll", () => {
+    clearTimeout(wheel.scrollTimer);
+    wheel.scrollTimer = setTimeout(() => {
+      selectDurationWheel(wheel, Math.round(picker.scrollTop / rowHeight), wheels, false);
+    }, 140);
+  }, { passive: true });
+
+  picker.addEventListener("keydown", (event) => {
+    let nextIndex = wheel.selectedIndex;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      nextIndex += event.key === "ArrowDown" ? 1 : -1;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = wheel.count - 1;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    selectDurationWheel(wheel, nextIndex, wheels);
+  });
+
+  picker.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "touch") return;
+    clearTimeout(wheel.scrollTimer);
+    picker.scrollTo({ top: picker.scrollTop, behavior: "instant" });
+    selectDurationWheel(wheel, Math.round(picker.scrollTop / rowHeight), wheels, false);
+    wheel.drag = { pointerId: event.pointerId, startY: event.clientY, startScrollTop: picker.scrollTop };
+    picker.focus({ preventScroll: true });
+    picker.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  picker.addEventListener("pointermove", (event) => {
+    if (wheel.drag?.pointerId !== event.pointerId) return;
+    picker.scrollTop = wheel.drag.startScrollTop + wheel.drag.startY - event.clientY;
+  });
+  const endDrag = (event) => {
+    if (wheel.drag?.pointerId !== event.pointerId) return;
+    wheel.drag = null;
+    selectDurationWheel(wheel, Math.round(picker.scrollTop / rowHeight), wheels, false);
+    picker.scrollTo({
+      top: wheel.selectedIndex * rowHeight,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth"
+    });
+  };
+  picker.addEventListener("pointerup", endDrag);
+  picker.addEventListener("pointercancel", endDrag);
 }
 
 function friendlyDataError(error) {
@@ -554,9 +704,14 @@ function friendlyDataError(error) {
 function updateTimerDisplay(seconds = state.timer ? Math.max(0, Math.ceil((state.timerEnd - Date.now()) / 1000)) : state.timerRemaining ?? state.timerTotal) {
   const display = document.querySelector("#timer-display");
   if (!display) return;
-  const minutes = Math.floor(seconds / 60);
+  const showHours = state.timerTotal >= 60 * 60;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = showHours ? Math.floor(seconds % 3600 / 60) : Math.floor(seconds / 60);
   const remainder = seconds % 60;
-  display.textContent = `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
+  display.textContent = showHours
+    ? `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`
+    : `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
+  display.parentElement.classList.toggle("is-long", showHours);
   const ring = document.querySelector("#timer-ring");
   const elapsed = state.timerTotal - seconds;
   ring.style.setProperty("--progress", `${Math.min(360, Math.max(0, elapsed / state.timerTotal * 360))}deg`);
@@ -569,7 +724,6 @@ function toggleTimer() {
     state.timerRemaining = Math.max(0, Math.ceil((state.timerEnd - Date.now()) / 1000));
     document.querySelector("#timer-toggle").textContent = "Resume focus";
     document.querySelector("#timer-caption").textContent = "paused";
-    document.querySelector("#duration").disabled = false;
     updateTimerDisplay(state.timerRemaining);
     return;
   }
@@ -585,7 +739,6 @@ function toggleTimer() {
   state.timerEnd = Date.now() + state.timerRemaining * 1000;
   document.querySelector("#timer-toggle").textContent = "Pause";
   document.querySelector("#timer-caption").textContent = "you’re doing great";
-  document.querySelector("#duration").disabled = true;
   state.timer = setInterval(async () => {
     const remaining = Math.max(0, Math.ceil((state.timerEnd - Date.now()) / 1000));
     updateTimerDisplay(remaining);
@@ -726,14 +879,11 @@ async function finishTimer() {
   const startedAt = state.timerStarted || new Date(Date.now() - durationSeconds * 1000);
   state.timerStarted = null;
   state.timerRemaining = null;
-  const selectedMinutes = Number(document.querySelector("#duration")?.value || 25);
-  state.timerTotal = selectedMinutes * 60;
+  state.timerTotal = state.timerPreference * 60;
   const button = document.querySelector("#timer-toggle");
   if (button) button.textContent = "Start focus";
   const caption = document.querySelector("#timer-caption");
   if (caption) caption.textContent = "well deserved";
-  const length = document.querySelector("#duration");
-  if (length) length.disabled = false;
   updateTimerDisplay(state.timerTotal);
   try {
     await addDoc(userCollection("focusSessions"), {
@@ -752,11 +902,7 @@ async function finishTimer() {
 function resetTimer() {
   clearInterval(state.timer);
   state.timer = null;
-  const duration = document.querySelector("#duration");
-  if (duration) {
-    duration.disabled = false;
-    state.timerTotal = Number(duration.value) * 60;
-  }
+  state.timerTotal = state.timerPreference * 60;
   state.timerRemaining = null;
   state.timerStarted = null;
   state.timerCompleted = false;
@@ -775,7 +921,7 @@ function resetTimerState() {
   state.timer = null;
   state.timerRemaining = null;
   state.timerStarted = null;
-  state.timerTotal = 25 * 60;
+  state.timerTotal = state.timerPreference * 60;
   state.timerCompleted = false;
   state.timerCompletionHandled = false;
 }

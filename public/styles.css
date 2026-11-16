@@ -195,8 +195,17 @@ h1, h2, h3, p { margin-top: 0; }
 .timer-completion[hidden] { display: none; }
 .timer-controls { display: grid; justify-items: start; gap: 13px; }
 .timer-controls .primary-btn { min-width: 110px; }
-.duration-select { border: 0; padding: 7px 0; background: transparent; color: var(--control-text); font-size: 11px; }
+.timer-actions { display: flex; align-items: center; gap: 12px; }
 .timer-note { margin: 0; color: var(--muted); font-size: 10px; }
+.duration-pickers { display: flex; gap: 12px; }
+.duration-column { display: grid; justify-items: center; gap: 7px; }
+.duration-picker { width: 72px; height: 144px; overflow-y: auto; overscroll-behavior: contain; border-radius: 10px; outline: none; cursor: grab; scrollbar-width: none; scroll-snap-type: y mandatory; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+.duration-picker::-webkit-scrollbar { display: none; }
+.duration-picker:focus-visible { outline: 3px solid var(--focus-outline); outline-offset: 3px; }
+.duration-picker-track { padding-block: 48px; }
+.duration-option { display: flex; height: 48px; align-items: center; justify-content: center; border-radius: 8px; color: var(--control-text); font-size: 16px; font-variant-numeric: tabular-nums; opacity: .48; scroll-snap-align: center; scroll-snap-stop: always; }
+.duration-option.is-selected { background: var(--green-pale); color: var(--green-dark); font-weight: 700; opacity: 1; }
+.timer-display.is-long strong { font-size: clamp(24px, 3vw, 32px); }
 .tasks-card { padding: 24px 25px 18px; }
 .task-form { display: flex; gap: 9px; margin: 20px 0 10px; }
 .task-input { min-width: 0; min-height: 43px; font-size: 12px; }
@@ -265,7 +274,7 @@ h1, h2, h3, p { margin-top: 0; }
   .dashboard-grid { grid-template-columns: minmax(0, 1.25fr) minmax(260px, .85fr); gap: 14px; }
   .left-column, .right-column { gap: 14px; }
   .focus-card { padding: 22px; }
-  .timer-body { gap: 28px; }
+  .timer-body { gap: 16px; }
   .timer-ring { width: 150px; height: 150px; }
   .timer-display strong { font-size: 35px; }
   .tasks-card, .progress-card { padding: 20px; }
@@ -289,11 +298,11 @@ h1, h2, h3, p { margin-top: 0; }
   .dashboard-grid { grid-template-columns: 1fr; gap: 14px; }
   .right-column { grid-row: 2; }
   .focus-card { padding: 21px; }
-  .timer-body { justify-content: space-evenly; gap: 15px; padding: 22px 0 9px; }
+  .timer-body { flex-direction: column; justify-content: center; gap: 17px; padding: 22px 0 9px; }
   .timer-ring { width: min(44vw, 150px); height: min(44vw, 150px); }
   .timer-ring::before { inset: 7px; }
   .timer-display strong { font-size: clamp(30px, 9vw, 38px); }
-  .timer-controls { gap: 11px; }
+  .timer-controls { justify-items: center; gap: 11px; }
   .timer-controls .primary-btn { min-width: 98px; min-height: 43px; padding: 0 13px; }
   .tasks-card { padding: 21px 18px 15px; }
   .task-form { gap: 7px; }
@@ -309,8 +318,7 @@ h1, h2, h3, p { margin-top: 0; }
   .field input, .field select, .task-input { font-size: 16px; }
   .text-btn, .auth-switch button { min-height: 44px; }
   .timer-controls .primary-btn { min-height: 44px; }
-  .top-actions .text-btn, .timer-controls .text-btn, .timer-controls .duration-select { min-height: 44px; }
-  .timer-controls .duration-select { padding-inline: 8px; }
+  .top-actions .text-btn, .timer-controls .text-btn { min-height: 44px; }
   .task-form .task-input, .task-form .primary-btn { min-height: 48px; }
   .task-check { width: 24px; height: 24px; }
   .delete-task { width: 44px; height: 44px; flex: 0 0 44px; }
